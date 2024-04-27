@@ -3,12 +3,13 @@ import jax.numpy as jnp
 import warnings
 from .sde import ExpSDE, MultiStepSDE
 from .helper import jax2th
-from jax._src.numpy.lax_numpy import _promote_dtypes_inexact
+from jax import dtypes
 
 
 def quad_root(a, b, c):
-    num = -b + jnp.sqrt(b**2 - 4 * a * c) 
+    num = -b + jnp.sqrt(b ** 2 - 4 * a * c)
     return num / 2 / a
+
 
 def get_linear_alpha_fns(beta_0, beta_1):
     def log_alpha_fn(t):
@@ -24,17 +25,20 @@ def get_linear_alpha_fns(beta_0, beta_1):
 
     return t2alpha_fn, alpha2t_fn
 
+
 def get_cos_alpha_fns():
     def t2alpha_fn(t):
         return jnp.cos(
-            ((t+0.008) / 1.008 * jnp.pi / 2)
-        )**2
+            ((t + 0.008) / 1.008 * jnp.pi / 2)
+        ) ** 2
+
     def alpha2t_fn(alpha):
         return jnp.arccos(
             jnp.sqrt(alpha)
         ) * 2 / jnp.pi * 1.008 - 0.008
 
     return t2alpha_fn, alpha2t_fn
+
 
 class VPSDE(ExpSDE, MultiStepSDE):
     def __init__(self, t2alpha_fn, alpha2t_fn, sampling_eps, sampling_T):
@@ -64,12 +68,12 @@ class VPSDE(ExpSDE, MultiStepSDE):
         return integrand
 
     def t2rho(self, t):
-        alpha_t  = self.t2alpha_fn(t)
-        return jnp.sqrt(self.alpha_start / alpha_t * (1-alpha_t)) - jnp.sqrt(1.0 - self.alpha_start)
+        alpha_t = self.t2alpha_fn(t)
+        return jnp.sqrt(self.alpha_start / alpha_t * (1 - alpha_t)) - jnp.sqrt(1.0 - self.alpha_start)
 
     def rho2t(self, rho):
         num = self.alpha_start
-        denum = (rho + jnp.sqrt(1 - self.alpha_start))**2 + self.alpha_start
+        denum = (rho + jnp.sqrt(1 - self.alpha_start)) ** 2 + self.alpha_start
         cur_alpha = num / denum
         return self.alpha2t_fn(cur_alpha)
 
@@ -80,20 +84,35 @@ class VPSDE(ExpSDE, MultiStepSDE):
         coef = jnp.sqrt(self.alpha_start / self.t2alpha_fn(t))
         return th_v / jax2th(coef, th_v)
 
-def get_interp_fn(_xp, _fp):
-  @jax.jit
-  def _fn(x):
-      if jnp.shape(_xp) != jnp.shape(_fp) or jnp.ndim(_xp) != 1:
-          raise ValueError("xp and fp must be one-dimensional arrays of equal size")
-      x, xp, fp = _promote_dtypes_inexact(x, _xp, _fp)
 
-      i = jnp.clip(jnp.searchsorted(xp, x, side='right'), 1, len(xp) - 1)
-      df = fp[i] - fp[i - 1]
-      dx = xp[i] - xp[i - 1]
-      delta = x - xp[i - 1]
-      f = jnp.where((dx == 0), fp[i], fp[i - 1] + (delta / dx) * df)
-      return f
-  return _fn
+def _promote_dtypes_inexact(*args):
+    """Convenience function to apply Numpy argument dtype promotion.
+
+    Promotes arguments to an inexact type."""
+
+    to_dtype, weak_type = dtypes._lattice_result_type(*args)
+    to_dtype = dtypes.canonicalize_dtype(to_dtype)
+    to_dtype_inexact = _to_inexact_dtype(to_dtype)
+    weak_type = (weak_type and to_dtype == to_dtype_inexact)
+    return [lax.convert_element_type(x, to_dtype_inexact, weak_type) for x in args]
+
+
+def get_interp_fn(_xp, _fp):
+    @jax.jit
+    def _fn(x):
+        if jnp.shape(_xp) != jnp.shape(_fp) or jnp.ndim(_xp) != 1:
+            raise ValueError("xp and fp must be one-dimensional arrays of equal size")
+        x, xp, fp = _promote_dtypes_inexact(x, _xp, _fp)
+
+        i = jnp.clip(jnp.searchsorted(xp, x, side='right'), 1, len(xp) - 1)
+        df = fp[i] - fp[i - 1]
+        dx = xp[i] - xp[i - 1]
+        delta = x - xp[i - 1]
+        f = jnp.where((dx == 0), fp[i], fp[i - 1] + (delta / dx) * df)
+        return f
+
+    return _fn
+
 
 class DiscreteVPSDE(VPSDE):
     def __init__(self, discrete_alpha):

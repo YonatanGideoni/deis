@@ -50,7 +50,6 @@ def args_and_config():
     parser.add_argument("--train_path", type=str, default='temp/train',
                         help="Choose the path to save training status")
 
-
     args = parser.parse_args()
 
     work_dir = os.getcwd()
@@ -79,15 +78,19 @@ if __name__ == "__main__":
     schedule = Schedule(args, config['Schedule'])
     if config['Model']['struc'] == 'DDIM':
         from model.ddim import Model
+
         model = Model(args, config['Model']).to(device)
     elif config['Model']['struc'] == 'iDDPM':
         from model.iDDPM.unet import UNetModel
+
         model = UNetModel(args, config['Model']).to(device)
     elif config['Model']['struc'] == 'PF':
         from model.scoresde.ddpm import DDPM
+
         model = DDPM(args, config['Model']).to(device)
     elif config['Model']['struc'] == 'PF_deep':
         from model.scoresde.ncsnpp import NCSNpp
+
         model = NCSNpp(args, config['Model']).to(device)
     else:
         model = None
@@ -97,4 +100,3 @@ if __name__ == "__main__":
         runner.train()
     elif args.runner == 'sample':
         runner.sample_fid()
-
